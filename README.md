@@ -1,31 +1,25 @@
 # per-strategy-gate-trainer
 
-Trains and calibrates per-strategy gate models (LogReg / RF / GBM / SVM) for Polymarket strategies.
+Trains a calibrated gate model per `(strategy, side)` for the 5-minute crypto up/down engine and emits a `deploy_map.json` the live bot consults at fire time.
 
-## Why it exists
+A single global gate under- or over-gates strategies that have different base win rates. This trains a dedicated ensemble per strategy and picks a per-strategy probability threshold. At fire time the bot looks up `strategy|side` in the map and applies that model plus threshold; misses fall through to the global gate or SHADOW.
 
-The main 5-minute crypto up/down trading engine fires dozens of named strategies, each with a different base win rate. A single global model under- or over-gates most of them. This repo trains a **dedicated calibrated ensemble per `(strategy, side)`** and finds a per-strategy probability threshold that lifts each viable strategy to a statistically defensible 70–80% win rate. The output is a `deploy_map.json` the live bot consults at fire time: look up the strategy, apply its specific model + threshold, otherwise fall through to the global gate or SHADOW.
+## Contents
 
-## How it works
+| File | What it does |
+|------|--------------|
+| `per_strategy_train.py` | Trainer and entry point. Loads ticks and fire recaps, builds features, and for each `(strategy, side)` with at least 50 free fires: chronological 70/30 split, trains a 5-model soft-vote ensemble (LogReg L2, LogReg L1, RandomForest, GradientBoosting, calibrated RBF-SVM), scans thresholds for the max Wilson lower-bound WR, then validates with Bonferroni-corrected binomial p and a 1000-iter permutation test. Writes the artifacts. |
+| `flip_features.py` | Runtime feature extractor vendored from the engine. Mirrors `vps_feature_extraction.py` (same `WINDOWS`, `crowd_num`, `safe_*` helpers, snapshot-at-cd logic) so training and live features match. Drops look-ahead fields. Edit upstream, not here. |
 
-| File | Role |
-|------|------|
-| `per_strategy_train.py` | The trainer / entry point. Loads historical ticks + fire recaps, builds features, and for every `(strategy, side)` with ≥50 free (un-gated) fires: chronological 70/30 walk-forward split → trains a 5-model soft-vote ensemble (LogReg L2, LogReg L1, RandomForest, GradientBoosting, calibrated RBF-SVM) → scans thresholds for the one maximizing Wilson-lower-bound WR → validates with Bonferroni-corrected binomial p and a 1000-iter permutation test → emits the artifacts. |
-| `flip_features.py` | **Vendored from the engine** — runtime feature extractor that mirrors `vps_feature_extraction.py` exactly (same `WINDOWS`, `crowd_num`, `safe_*` helpers, snapshot-at-cd logic) so training-time and live features match bit-for-bit. Excludes look-ahead/leaky fields. Edit upstream, not here. |
-
-Gating tiers in the output: `TARGET` (Wilson-lo ≥ 0.70, all rigor tests pass) and `VIABLE` (Wilson-lo ≥ 0.55, relaxed). Anything else is skipped.
+Output tiers: `TARGET` is Wilson-lo >= 0.70 with all rigor tests passing, `VIABLE` is Wilson-lo >= 0.55 relaxed. Anything else is skipped.
 
 ## Requirements
 
-- Python 3.9+
-- `numpy`, `scikit-learn` (the only third-party deps; everything else is stdlib)
-- Read access to the historical data files (see **Data**)
+Python 3.9+, `numpy`, `scikit-learn`. Everything else is stdlib.
 
 ```bash
 pip install numpy scikit-learn
 ```
-
-No wallet, key, or network access is needed — this is fully offline training and handles no funds.
 
 ## Usage
 
@@ -33,18 +27,18 @@ No wallet, key, or network access is needed — this is fully offline training a
 python3 per_strategy_train.py
 ```
 
-The script `chdir`s into `/home/polybot/polymarket-bot/data` and inserts `/home/polybot/polymarket-bot` on the path (adjust these two constants near the top if your checkout differs). It prints a per-strategy results table and a TARGET/VIABLE summary, then writes:
+Prints a per-strategy results table and a TARGET/VIABLE summary, then writes:
 
-- `per_strategy_models.pkl` — fitted model packs (models + scaler + feature list), the deploy map, and per-strategy diagnostics.
-- `deploy_map.json` — the runtime lookup table (`"strategy|side" → {threshold, wr, wilson_lo, tier, ...}`) consumed by the live bot's gate.
+- `per_strategy_models.pkl`: fitted model packs (models, scaler, feature list), the deploy map, and per-strategy diagnostics.
+- `deploy_map.json`: runtime lookup table, `"strategy|side"` to `{threshold, wr, wilson_lo, tier, ...}`.
 
 ## Data
 
-This repo ships **code only**. It reads two history files from the private `polymarket-data` repo (expected under the engine's `data/` dir):
+Code only. Reads two history files from the private `polymarket-data` repo, expected under the engine's `$DATA_DIR`:
 
-- `market_history.jsonl` — per-market tick replays (keyed by slug).
-- `market_recap_history.jsonl` — per-market fire recaps with strategy, side, entry, and hypothetical PnL.
+- `market_history.jsonl`: per-market tick replays, keyed by slug.
+- `market_recap_history.jsonl`: per-market fire recaps (strategy, side, entry, hypothetical PnL).
 
-Point the path constants at your local `polymarket-data` checkout before running. The `.jsonl`, `.pkl`, and `.json` artifacts are git-ignored and never committed.
+The script `chdir`s into `$DATA_DIR` and inserts the engine root on `sys.path`; adjust the two path constants near the top of `per_strategy_train.py` if your checkout differs. Generated `.jsonl`, `.pkl`, and `.json` artifacts are git-ignored.
 
-> Private research software. No warranty; trades/handles real funds at your own risk.
+Offline training, no credentials required.
