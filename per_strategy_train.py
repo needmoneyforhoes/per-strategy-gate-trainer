@@ -28,8 +28,8 @@ USAGE:
 import json, math, sys, os, pickle, random
 from collections import defaultdict
 
-sys.path.insert(0, '/home/polybot/polymarket-bot')
-os.chdir('/home/polybot/polymarket-bot/data')
+sys.path.insert(0, '.')
+os.chdir('./data')
 
 import numpy as np
 np.random.seed(42)
