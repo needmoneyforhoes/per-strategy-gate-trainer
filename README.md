@@ -42,3 +42,8 @@ Code only. Reads two history files from the private `polymarket-data` repo, expe
 The script `chdir`s into `$DATA_DIR` and inserts the engine root on `sys.path`; adjust the two path constants near the top of `per_strategy_train.py` if your checkout differs. Generated `.jsonl`, `.pkl`, and `.json` artifacts are git-ignored.
 
 Offline training, no credentials required.
+
+## Feedback
+
+Suggestions, improvements, or something not working? Please
+[open an issue](https://github.com/needmoneyforhoes/per-strategy-gate-trainer/issues/new). Pull requests are welcome too.
